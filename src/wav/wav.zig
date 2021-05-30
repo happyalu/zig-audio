@@ -39,6 +39,8 @@ pub fn WaveReader(comptime ReaderType: type, comptime SampleType: type, comptime
     return struct {
         const Self = @This();
         pub const Error = ReaderType.Error || error{ BadHeader, UnexpectedEOF, BadState, UnsupportedFormat, UnsupportedSampleType };
+        pub const Reader = io.Reader(*Self, Error, readFn);
+
         const max_bits_per_sample = 32;
         const data_buf_size = (max_bits_per_sample / 8) * sampleBufSize;
         const SampleFifoType = std.fifo.LinearFifo(SampleType, .{ .Static = sampleBufSize });
@@ -296,12 +298,35 @@ pub fn WaveReader(comptime ReaderType: type, comptime SampleType: type, comptime
             }
         }
 
-        // read into the given buffer fully, EOF means input is invalid.
+        /// read into the given buffer fully, EOF means input is invalid.
         fn readFull(self: *Self, buf: []u8) Error!void {
             const n = try self.source.readAll(buf);
             if (n < buf.len) {
                 return Error.UnexpectedEOF;
             }
+        }
+
+        /// implements the io.Reader interface
+        fn readFn(self: *Self, buf: []u8) Error!usize {
+            // find how many samples can fit in buf.
+            const sample_size = @sizeOf(SampleType);
+            const max_samples = buf.len / sample_size;
+            if (max_samples == 0) return 0;
+
+            var tmp: [512]SampleType = undefined;
+
+            const len = if (tmp.len < max_samples) tmp.len else max_samples;
+            const n = try self.readSamples(tmp[0..len]);
+            if (n == 0) return 0;
+
+            const tmp_u8 = std.mem.sliceAsBytes(tmp[0..n]);
+            std.mem.copy(u8, buf, tmp_u8);
+
+            return n * sample_size;
+        }
+
+        pub fn reader(self: *Self) Reader {
+            return .{ .context = self };
         }
     };
 }
@@ -392,4 +417,18 @@ test "invalid inputs" {
     try std.testing.expectError(error.UnexpectedEOF, testReader(i16, "testdata/bad_data_eof.wav", "testdata/test_pcm16.i16.raw"));
     try std.testing.expectError(error.BadHeader, testReader(i16, "testdata/bad_no_riff.wav", "testdata/test_pcm16.i16.raw"));
     try std.testing.expectError(error.BadHeader, testReader(i16, "testdata/bad_no_fmt.wav", "testdata/test_pcm16.i16.raw"));
+}
+
+test "wavereader io.Reader" {
+    var r = std.io.fixedBufferStream(@embedFile("testdata/test_pcm16.wav")).reader();
+    var wavr = waveReaderPCM16(r).reader();
+
+    const got = try wavr.readAllAlloc(std.testing.allocator, std.math.maxInt(usize));
+    defer std.testing.allocator.free(got);
+
+    var truth = std.io.fixedBufferStream(@embedFile("testdata/test_pcm16.i16.raw")).reader();
+    const want = try truth.readAllAlloc(std.testing.allocator, std.math.maxInt(usize));
+    defer std.testing.allocator.free(want);
+
+    try std.testing.expectEqualSlices(u8, want, got);
 }
