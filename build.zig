@@ -21,6 +21,11 @@ pub fn build(b: *std.build.Builder) void {
     frame_exe.setBuildMode(mode);
     frame_exe.install();
 
+    const fftr_exe = b.addExecutable("fftr", "src/fftr.zig");
+    fftr_exe.setTarget(target);
+    fftr_exe.setBuildMode(mode);
+    fftr_exe.install();
+
     const mfcc_exe = b.addExecutable("mfcc", "src/mfcc.zig");
     mfcc_exe.setTarget(target);
     mfcc_exe.setBuildMode(mode);
