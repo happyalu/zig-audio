@@ -7,6 +7,8 @@ pub const DCT = struct {
     allocator: *std.mem.Allocator,
     size: usize,
     workspace: []f32,
+    dft_sin: []f32,
+    dft_cos: []f32,
 
     pub fn init(allocator: *std.mem.Allocator, input_size: usize) !Self {
         var workspace = try allocator.alloc(f32, input_size * 10);
@@ -25,15 +27,34 @@ pub const DCT = struct {
         w_real[0] /= std.math.sqrt(2.0);
         w_imag[0] /= std.math.sqrt(2.0);
 
+        var dft_sin = try allocator.alloc(f32, 4 * input_size * input_size);
+        var dft_cos = try allocator.alloc(f32, 4 * input_size * input_size);
+        k = 0;
+        const dft_size = 2 * input_size;
+        const dft_size_f32 = @intToFloat(f32, dft_size);
+        while (k < dft_size) : (k += 1) {
+            const k_f32 = @intToFloat(f32, k);
+            var n: usize = 0;
+            while (n < dft_size) : (n += 1) {
+                const n_f32 = @intToFloat(f32, n);
+                dft_sin[k * dft_size + n] = std.math.sin(2.0 * std.math.pi * n_f32 * k_f32 / (dft_size_f32));
+                dft_cos[k * dft_size + n] = std.math.cos(2.0 * std.math.pi * n_f32 * k_f32 / (dft_size_f32));
+            }
+        }
+
         return Self{
             .allocator = allocator,
             .size = input_size,
             .workspace = workspace,
+            .dft_sin = dft_sin,
+            .dft_cos = dft_cos,
         };
     }
 
     pub fn deinit(self: *Self) void {
         self.allocator.free(self.workspace);
+        self.allocator.free(self.dft_sin);
+        self.allocator.free(self.dft_cos);
     }
 
     /// Update data with its DCT. This function is not thread-safe. First half
@@ -67,8 +88,10 @@ pub const DCT = struct {
             n = 0;
             while (n < dft_size) : (n += 1) {
                 const n_f32 = @intToFloat(f32, n);
-                sum_real += local_real[n] * std.math.cos(2.0 * std.math.pi * n_f32 * k_f32 / (dft_size_f32)) + local_imag[n] * std.math.sin(2.0 * std.math.pi * n_f32 * k_f32 / dft_size_f32);
-                sum_imag += -local_real[n] * std.math.sin(2.0 * std.math.pi * n_f32 * k_f32 / (dft_size_f32)) + local_imag[n] * std.math.cos(2.0 * std.math.pi * n_f32 * k_f32 / dft_size_f32);
+                const sinval = self.dft_sin[k * dft_size + n];
+                const cosval = self.dft_cos[k * dft_size + n];
+                sum_real += local_real[n] * cosval + local_imag[n] * sinval;
+                sum_imag += -local_real[n] * sinval + local_imag[n] * cosval;
             }
             tmp_real[k] = sum_real;
             tmp_imag[k] = sum_imag;
@@ -82,8 +105,7 @@ pub const DCT = struct {
     }
 };
 
-test "dct stdin" {
-    const stdin = std.io.getStdIn().reader();
+test "dct" {
     var dct = try DCT.init(std.testing.allocator, 16);
     defer dct.deinit();
 

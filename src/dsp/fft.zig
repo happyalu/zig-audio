@@ -114,13 +114,16 @@ pub const FFT = struct {
             while (j < n) : (j += 1) {
                 var p = j;
                 var k: usize = m;
+                const sinval = self.sin[sin_idx];
+                const cosval = self.sin[cos_idx];
+
                 while (k <= real.len) : (k += m) {
                     const t1 = real[p] - real[p + n];
                     const t2 = imag[p] - imag[p + n];
                     real[p] += real[p + n];
                     imag[p] += imag[p + n];
-                    real[p + n] = self.sin[cos_idx] * t1 + self.sin[sin_idx] * t2;
-                    imag[p + n] = self.sin[cos_idx] * t2 - self.sin[sin_idx] * t1;
+                    real[p + n] = cosval * t1 + sinval * t2;
+                    imag[p + n] = cosval * t2 - sinval * t1;
                     p += m;
                 }
                 sin_idx += sin_step;
