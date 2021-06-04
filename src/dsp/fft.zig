@@ -181,7 +181,28 @@ test "fft" {
 
     var i: usize = 0;
     while (i < real.len) : (i += 1) {
-        try std.testing.expectApproxEqRel(real_truth[i], real[i], 0.0001);
-        try std.testing.expectApproxEqRel(imag_truth[i], imag[i], 0.0001);
+        try std.testing.expectApproxEqRel(real_truth[i], real[i], 0.001);
+        try std.testing.expectApproxEqRel(imag_truth[i], imag[i], 0.001);
+    }
+}
+
+test "fft file" {
+    var f = try FFT.init(std.testing.allocator, 256);
+    defer f.deinit();
+
+    var d = std.io.fixedBufferStream(@embedFile("testdata/test_fft.256.frame"));
+    var data: [512]f32 = undefined;
+    var data_u8 = std.mem.sliceAsBytes(data[0..256]);
+    try d.reader().readNoEof(data_u8);
+
+    var t = std.io.fixedBufferStream(@embedFile("testdata/test_fft.256.fft"));
+    var truth: [512]f32 = undefined;
+    var truth_u8 = std.mem.sliceAsBytes(truth[0..]);
+    try t.reader().readNoEof(truth_u8);
+
+    try f.fftr(data[0..256], data[256..]);
+
+    for (data) |x, idx| {
+        try std.testing.expectApproxEqRel(truth[idx], x, 0.001);
     }
 }
