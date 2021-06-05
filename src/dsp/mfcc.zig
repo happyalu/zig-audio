@@ -278,7 +278,7 @@ pub fn MFCCMaker(comptime ReaderType: type) type {
             return true;
         }
 
-        fn readSourceFrameIntoBuf(self: Self) Error!bool {
+        fn readSourceFrameIntoBuf(self: *Self) Error!bool {
             if (comptime std.meta.trait.hasFn("readFrame")(ReaderType)) {
                 // read samples directly from the source, since it's a frame reader.
                 return try self.source.readFrame(self.buf[0..self.opts.frame_length]);

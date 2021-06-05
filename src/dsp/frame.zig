@@ -6,7 +6,7 @@ pub fn length(sample_rate: u32, frame_length_msec: u8) u32 {
 }
 
 pub fn shift(sample_rate: u32, frame_shift_msec: u8) u32 {
-    return sample_rate * frame_length_shift / 1000;
+    return sample_rate * frame_shift_msec / 1000;
 }
 
 pub const FrameOpts = struct {
@@ -17,7 +17,7 @@ pub const FrameOpts = struct {
 pub fn FrameMaker(comptime ReaderType: type, comptime SampleType: type) type {
     return struct {
         const Self = @This();
-        const Error = ReaderType.Error || error{ IncorrectFrameSize, UnexpectedEOF, BufferTooShort };
+        pub const Error = ReaderType.Error || error{ IncorrectFrameSize, UnexpectedEOF, BufferTooShort };
         pub const Reader = io.Reader(*Self, Error, readFn);
 
         allocator: *std.mem.Allocator,
