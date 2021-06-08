@@ -1,5 +1,5 @@
 const std = @import("std");
-const wav = @import("wav/wav.zig");
+const audio = @import("audio");
 
 pub fn main() anyerror!void {
     runMain() catch |err| {
@@ -10,7 +10,7 @@ pub fn main() anyerror!void {
 fn runMain() !void {
     const stdin = std.io.getStdIn().reader();
     const stdout = std.io.getStdOut().writer();
-    var wavr = wav.waveReaderFloat32(stdin).reader();
+    var wavr = audio.waveReaderFloat32(stdin).reader();
 
     var buf: [512]u8 = undefined;
 

@@ -1,5 +1,5 @@
 const std = @import("std");
-const fft = @import("dsp/fft.zig");
+const audio = @import("audio");
 
 pub fn main() anyerror!void {
     runMain() catch |err| {
@@ -16,7 +16,7 @@ fn runMain() !void {
 
     const size = 256;
 
-    var f = try fft.FFT.init(alloc, size);
+    var f = try audio.FFT.init(alloc, size);
     defer f.deinit();
 
     var buf1 = try alloc.alignedAlloc(u8, 4, size * @sizeOf(f32));
