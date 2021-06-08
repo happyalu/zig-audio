@@ -3,7 +3,7 @@ const io = std.io;
 const FFT = @import("fft.zig").FFT;
 const DCT = @import("dct.zig").DCT;
 
-pub const MFCCOpts = struct {
+pub const MelOpts = struct {
     const Self = @This();
 
     frame_length: u16 = 256,
@@ -12,14 +12,21 @@ pub const MFCCOpts = struct {
     preemph_coeff: f32 = 0.97,
     liftering_coeff: f32 = 22.0,
     blackman_coeff: f32 = 0.42,
-    window: WindowType = WindowType.Hamming,
+    window: WindowType = .Hamming,
 
     filterbank_floor: f32 = 1.0,
+    filterbank_num_bins: u8 = 20,
 
-    order: u8 = 12,
-    num_bins: u8 = 20,
+    mfcc_order: u8 = 12,
+    output_type: OutputType = .MFCC,
+
     output_energy: bool = true,
     output_c0: bool = false,
+
+    pub const OutputType = enum {
+        MelEnergy,
+        MFCC,
+    };
 
     pub const WindowType = enum {
         Hanning,
@@ -29,15 +36,18 @@ pub const MFCCOpts = struct {
         Povey,
     };
 
-    pub fn fft_frame_length(self: Self) !u32 {
+    pub fn fftFrameLength(self: Self) !u32 {
         if (std.math.isPowerOfTwo(self.frame_length))
             return self.frame_length * 2;
 
         return try std.math.ceilPowerOfTwo(u16, self.frame_length);
     }
 
-    pub fn mfcc_length(self: Self) usize {
-        var l: usize = self.order;
+    pub fn featLength(self: Self) usize {
+        var l: usize = switch (self.output_type) {
+            .MelEnergy => self.filterbank_num_bins,
+            .MFCC => self.mfcc_order,
+        };
 
         if (self.output_energy) l += 1;
         if (self.output_c0) l += 1;
@@ -147,18 +157,18 @@ pub fn MFCCMaker(comptime ReaderType: type) type {
         source: ReaderType,
         fft: FFT,
         dct: DCT,
-        opts: MFCCOpts,
+        opts: MelOpts,
         buf: []f32,
         buf2: []f32,
         window: []f32,
         readfn_scratch: []f32,
         fbank: FilterBank,
 
-        pub fn init(allocator: *std.mem.Allocator, source: ReaderType, opts: MFCCOpts) !Self {
-            var padded_frame_length = try opts.fft_frame_length();
+        pub fn init(allocator: *std.mem.Allocator, source: ReaderType, opts: MelOpts) !Self {
+            var padded_frame_length = try opts.fftFrameLength();
             var buf = try allocator.alloc(f32, padded_frame_length);
             var buf2 = try allocator.alloc(f32, padded_frame_length);
-            var readfn_scratch = try allocator.alloc(f32, opts.mfcc_length());
+            var readfn_scratch = try allocator.alloc(f32, opts.featLength());
 
             var window = try allocator.alloc(f32, opts.frame_length);
             const a = std.math.pi * 2.0 / @intToFloat(f32, opts.frame_length - 1);
@@ -166,27 +176,27 @@ pub fn MFCCMaker(comptime ReaderType: type) type {
                 const i = @intToFloat(f32, idx);
 
                 switch (opts.window) {
-                    MFCCOpts.WindowType.Hanning => {
+                    MelOpts.WindowType.Hanning => {
                         v.* = 0.5 - 0.5 * std.math.cos(a * i);
                     },
-                    MFCCOpts.WindowType.Hamming => {
+                    MelOpts.WindowType.Hamming => {
                         v.* = 0.54 - 0.46 * std.math.cos(a * i);
                     },
-                    MFCCOpts.WindowType.Povey => {
+                    MelOpts.WindowType.Povey => {
                         v.* = std.math.pow(f32, (0.5 - 0.5 * std.math.cos(a * i)), 0.85);
                     },
-                    MFCCOpts.WindowType.Rectangular => {
+                    MelOpts.WindowType.Rectangular => {
                         v.* = 1.0;
                     },
-                    MFCCOpts.WindowType.Blackman => {
+                    MelOpts.WindowType.Blackman => {
                         v.* = opts.blackman_coeff - 0.5 * std.math.cos(a * i) + (0.5 - opts.blackman_coeff) * std.math.cos(2 * a * i);
                     },
                 }
             }
 
             const fft = try FFT.init(allocator, padded_frame_length);
-            const fbank = try FilterBank.init(allocator, opts.filterbank_floor, opts.sample_rate, padded_frame_length, opts.num_bins);
-            const dct = try DCT.init(allocator, opts.num_bins);
+            const fbank = try FilterBank.init(allocator, opts.filterbank_floor, opts.sample_rate, padded_frame_length, opts.filterbank_num_bins);
+            const dct = try DCT.init(allocator, opts.filterbank_num_bins);
 
             return Self{
                 .allocator = allocator,
@@ -213,7 +223,7 @@ pub fn MFCCMaker(comptime ReaderType: type) type {
         }
 
         pub fn readFrame(self: *Self, dst: []f32) Error!bool {
-            if (dst.len != self.opts.mfcc_length()) return error.IncorrectFrameSize;
+            if (dst.len != self.opts.featLength()) return error.IncorrectFrameSize;
 
             // read input frame into buf for modification in-place
             if (!try self.readSourceFrameIntoBuf()) return false; // end of input
@@ -233,11 +243,11 @@ pub fn MFCCMaker(comptime ReaderType: type) type {
             var spectrum = self.buf[0 .. self.buf.len / 2];
 
             // reserve space for filter bank an zero it out.
-            var filter_bank = self.buf2[0 .. 1 + 2 * self.opts.num_bins];
+            var filter_bank = self.buf2[0 .. 1 + 2 * self.opts.filterbank_num_bins];
             std.mem.set(f32, filter_bank, 0);
 
             self.fbank.apply(spectrum, filter_bank) catch unreachable;
-            filter_bank = filter_bank[1 .. 1 + self.opts.num_bins];
+            filter_bank = filter_bank[1 .. 1 + self.opts.filterbank_num_bins];
 
             var c0: f32 = 0;
             if (self.opts.output_c0) {
@@ -245,13 +255,32 @@ pub fn MFCCMaker(comptime ReaderType: type) type {
                     c0 += v;
                 }
 
-                c0 *= std.math.sqrt(2.0 / @intToFloat(f32, self.opts.num_bins));
+                c0 *= std.math.sqrt(2.0 / @intToFloat(f32, self.opts.filterbank_num_bins));
+            }
+
+            if (self.opts.output_type == .MelEnergy) {
+                // ignore first mfcc and save others to dst.
+                var k: usize = 0;
+                while (k < self.opts.filterbank_num_bins) : (k += 1) {
+                    dst[k] = filter_bank[k];
+                }
+
+                if (self.opts.output_c0) {
+                    dst[k] = c0;
+                    k += 1;
+                }
+
+                if (self.opts.output_energy) {
+                    dst[k - 1] = energy;
+                    k += 1;
+                }
+                return true;
             }
 
             // compute DCT of filter-bank in place.  output mfcc are in the first part of the buffer.
-            var dct_data = self.buf2[1 .. 1 + 2 * self.opts.num_bins];
+            var dct_data = self.buf2[1 .. 1 + 2 * self.opts.filterbank_num_bins];
             self.dct.apply(dct_data) catch unreachable;
-            var mfcc = dct_data[0 .. self.opts.order + 1];
+            var mfcc = dct_data[0 .. self.opts.mfcc_order + 1];
 
             // liftering
             for (mfcc) |*x, idx| {
@@ -261,7 +290,7 @@ pub fn MFCCMaker(comptime ReaderType: type) type {
 
             // ignore first mfcc and save others to dst.
             var k: usize = 1;
-            while (k <= self.opts.order) : (k += 1) {
+            while (k <= self.opts.mfcc_order) : (k += 1) {
                 dst[k - 1] = mfcc[k];
             }
 
@@ -340,7 +369,7 @@ pub fn MFCCMaker(comptime ReaderType: type) type {
         /// implements the io.Reader interface. Provided buffer must be long
         /// enough to hold an entire frame.
         fn readFn(self: *Self, buf: []u8) Error!usize {
-            if (buf.len < self.opts.mfcc_length() * @sizeOf(f32)) {
+            if (buf.len < self.opts.featLength() * @sizeOf(f32)) {
                 return Error.BufferTooShort;
             }
 
@@ -360,7 +389,7 @@ pub fn MFCCMaker(comptime ReaderType: type) type {
     };
 }
 
-pub fn mfccMaker(allocator: *std.mem.Allocator, reader: anytype, opts: MFCCOpts) !MFCCMaker(@TypeOf(reader)) {
+pub fn mfccMaker(allocator: *std.mem.Allocator, reader: anytype, opts: MelOpts) !MFCCMaker(@TypeOf(reader)) {
     return MFCCMaker(@TypeOf(reader)).init(allocator, reader, opts);
 }
 
@@ -386,7 +415,5 @@ test "mfcc" {
             const w = want[idx];
             try std.testing.expectApproxEqRel(w, g, 0.01);
         }
-
-        std.debug.warn("mcep={d:.3}\n", .{got});
     }
 }
