@@ -1,0 +1,11 @@
+pkgs:
+  audio:
+    version: 0.0.0
+    description: "Audio processing in zig"
+    license: MIT
+    source_url: "https://github.com/happyalu/zig-audio"
+
+    root: audio.zig
+    files:
+      README.md
+      LICENSE
