@@ -1,17 +1,17 @@
 const std = @import("std");
 const io = std.io;
 
-pub fn length(sample_rate: u32, frame_length_msec: u8) u32 {
+pub fn length(sample_rate: u32, frame_length_msec: u8) u16 {
     return sample_rate * frame_length_msec / 1000;
 }
 
-pub fn shift(sample_rate: u32, frame_shift_msec: u8) u32 {
+pub fn shift(sample_rate: u32, frame_shift_msec: u8) u16 {
     return sample_rate * frame_shift_msec / 1000;
 }
 
 pub const FrameOpts = struct {
-    length: u32 = 256,
-    shift: u32 = 100,
+    length: u16 = 256,
+    shift: u16 = 100,
 };
 
 pub fn FrameMaker(comptime ReaderType: type, comptime SampleType: type) type {
