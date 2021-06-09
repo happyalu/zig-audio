@@ -66,9 +66,15 @@ pub fn FrameMaker(comptime ReaderType: type, comptime SampleType: type) type {
             var n = if (self.frame_count == 0) (self.opts.length + 1) / 2 else self.opts.shift;
             if (!try self.readBuf(n)) return false; // done
 
-            for (dst) |*d| {
-                d.* = self.buf[self.buf_read_idx];
-                self.buf_read_idx = (self.buf_read_idx + 1) % self.buf.len;
+            // copy self.buf into dst; this may have to be done in two steps
+            // depending on self.buf_read_idx
+
+            const buf_tail_length = self.buf.len - self.buf_read_idx;
+            if (buf_tail_length >= dst.len) {
+                std.mem.copy(SampleType, dst, self.buf[self.buf_read_idx .. self.buf_read_idx + dst.len]);
+            } else {
+                std.mem.copy(SampleType, dst[0..buf_tail_length], self.buf[self.buf_read_idx..]);
+                std.mem.copy(SampleType, dst[buf_tail_length..], self.buf[0 .. dst.len - buf_tail_length]);
             }
 
             self.buf_read_idx = (self.buf_read_idx + self.opts.shift) % self.buf.len;
@@ -78,19 +84,17 @@ pub fn FrameMaker(comptime ReaderType: type, comptime SampleType: type) type {
         /// reads exactly n items into buf. if source has eof, it pads with 0.
         /// if at least one sample was read from source, returns true.
         fn readBuf(self: *Self, n: usize) !bool {
-            var tmp: [512]SampleType = undefined;
             var unread_count: usize = n;
             var ret_val = false;
 
             while (unread_count > 0) {
-                const len = if (unread_count < tmp.len) unread_count else tmp.len;
-                const r = try self.readSamples(tmp[0..len]);
+                const buf_tail_length = self.buf.len - self.buf_write_idx;
+                const len = if (unread_count < buf_tail_length) unread_count else buf_tail_length;
+
+                const r = try self.readSamples(self.buf[self.buf_write_idx .. self.buf_write_idx + len]);
                 if (r > 0) {
                     ret_val = true;
-                    for (tmp[0..r]) |v| {
-                        self.buf[self.buf_write_idx] = v;
-                        self.buf_write_idx = (self.buf_write_idx + 1) % self.buf.len;
-                    }
+                    self.buf_write_idx = (self.buf_write_idx + r) % self.buf.len;
                     unread_count -= r;
                 } else {
                     // source had eof, pad with zeros.
