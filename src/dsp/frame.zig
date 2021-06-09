@@ -2,11 +2,11 @@ const std = @import("std");
 const io = std.io;
 
 pub fn length(sample_rate: u32, frame_length_msec: u8) u16 {
-    return sample_rate * frame_length_msec / 1000;
+    return @intCast(u16, sample_rate / 1000) * frame_length_msec;
 }
 
 pub fn shift(sample_rate: u32, frame_shift_msec: u8) u16 {
-    return sample_rate * frame_shift_msec / 1000;
+    return @intCast(u16, sample_rate / 1000) * frame_shift_msec;
 }
 
 pub const FrameOpts = struct {
