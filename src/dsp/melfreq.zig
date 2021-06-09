@@ -271,7 +271,7 @@ pub fn MFCCMaker(comptime ReaderType: type) type {
                 }
 
                 if (self.opts.output_energy) {
-                    dst[k - 1] = energy;
+                    dst[k] = energy;
                     k += 1;
                 }
                 return true;
