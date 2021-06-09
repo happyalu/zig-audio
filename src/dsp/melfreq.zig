@@ -10,7 +10,6 @@ pub const MelOpts = struct {
     sample_rate: u32 = 16000,
 
     remove_dc_offset: bool = true,
-    dither: f32 = 1.0,
 
     preemph_coeff: f32 = 0.97,
     liftering_coeff: f32 = 22.0,
@@ -166,7 +165,6 @@ pub fn MFCCMaker(comptime ReaderType: type) type {
         window: []f32,
         readfn_scratch: []f32,
         fbank: FilterBank,
-        rand: std.rand.DefaultPrng,
 
         pub fn init(allocator: *std.mem.Allocator, source: ReaderType, opts: MelOpts) !Self {
             var padded_frame_length = try opts.fftFrameLength();
@@ -202,8 +200,6 @@ pub fn MFCCMaker(comptime ReaderType: type) type {
             const fbank = try FilterBank.init(allocator, opts.filterbank_floor, opts.sample_rate, padded_frame_length, opts.filterbank_num_bins);
             const dct = try DCT.init(allocator, opts.filterbank_num_bins);
 
-            var r = std.rand.DefaultPrng.init(0);
-
             return Self{
                 .allocator = allocator,
                 .source = source,
@@ -215,7 +211,6 @@ pub fn MFCCMaker(comptime ReaderType: type) type {
                 .fft = fft,
                 .fbank = fbank,
                 .dct = dct,
-                .rand = r,
             };
         }
 
@@ -237,7 +232,6 @@ pub fn MFCCMaker(comptime ReaderType: type) type {
 
             std.mem.set(f32, self.buf[self.opts.frame_length..], 0.0);
 
-            self.dither();
             self.removeDCOffset();
 
             const energy: f32 = if (self.opts.output_energy) self.calculateEnergy() else 0;
@@ -352,16 +346,6 @@ pub fn MFCCMaker(comptime ReaderType: type) type {
             }
         }
 
-        fn dither(self: *Self) void {
-            if (self.opts.dither == 0) {
-                return;
-            }
-
-            for (self.buf[0..self.opts.frame_length]) |*v| {
-                v.* += self.rand.random.floatNorm(f32) * self.opts.dither;
-            }
-        }
-
         fn calculateEnergy(self: Self) f32 {
             const energy_floor = -1.0E+10;
 
@@ -431,7 +415,7 @@ pub fn mfccMaker(allocator: *std.mem.Allocator, reader: anytype, opts: MelOpts) 
 
 test "mfcc" {
     var frames = std.io.fixedBufferStream(@embedFile("testdata/test_pcm16.f32.frames"));
-    var mm = try mfccMaker(std.testing.allocator, frames.reader(), .{ .output_c0 = true, .dither = 0, .remove_dc_offset = false });
+    var mm = try mfccMaker(std.testing.allocator, frames.reader(), .{ .output_c0 = true, .remove_dc_offset = false });
     defer mm.deinit();
 
     const truth = std.io.fixedBufferStream(@embedFile("testdata/test_pcm16.f32.mfcc")).reader();
